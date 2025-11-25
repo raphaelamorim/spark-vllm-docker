@@ -53,8 +53,43 @@ docker run -it --rm \
   --ipc=host \
   --privileged \
   --name vllm_node \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
   vllm-node bash
 ```
+
+Or if you want to start the cluster node (head or regular), you can launch with the run-cluster.sh script (see details below):
+
+**On head node:**
+
+```bash
+docker run --privileged --gpus all -it --rm \
+  --ipc=host --shm-size 10.24g \
+  --network host \
+  --name vllm_node \ 
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm-node ./run-cluster-node.sh \
+    --role head 
+    --host-ip 192.168.177.11 
+    --eth-if enp1s0f1np1 
+    --ib-if rocep1s0f1 
+```
+
+**On worker node**
+
+```bash
+docker run --privileged --gpus all -it --rm \
+  --ipc=host --shm-size 10.24g \
+  --network host \
+  --name vllm_node \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm-node ./run-cluster-node.sh \
+    --role node
+    --host-ip 192.168.177.12
+    --eth-if enp1s0f1np1
+    --ib-if rocep1s0f1
+    --head-ip 192.168.177.11
+```
+
 
 **Flags Explained:**
 
