@@ -14,8 +14,9 @@ The Dockerfile builds from the main branch of VLLM, so depending on when you run
 
 ### 2025-12-18
 
-Updated `build-and-copy.sh` to support copying to multiple hosts. 
+Updated `build-and-copy.sh` to support copying to multiple hosts.
 - Added `-c, --copy-to` (accepts space- or comma-separated host lists) and kept `--copy-to-host` as a backward-compatible alias.
+- Added `--copy-parallel` to copy to all hosts concurrently.
 - Short `-h` is now used for help.
 
 ### 2025-12-15
@@ -99,6 +100,12 @@ Copy to multiple hosts (space- or comma-separated after the flag):
 ./build-and-copy.sh --copy-to 192.168.177.12 192.168.177.13
 ```
 
+Copy to multiple hosts in parallel:
+
+```bash
+./build-and-copy.sh --copy-to 192.168.177.12 192.168.177.13 --copy-parallel
+```
+
 Using a different username:
 
 ```bash
@@ -146,6 +153,7 @@ Using a different username:
 | `--vllm-ref <ref>` | vLLM commit SHA, branch or tag (default: 'main') |
 | `-c, --copy-to <host[,host...] or host host...>` | Host(s) to copy the image to after building (space- or comma-separated list after the flag). |
 | `--copy-to-host` | Alias for `--copy-to` (backwards compatibility). |
+| `--copy-parallel` | Copy to all specified hosts concurrently. |
 | `-u, --user <user>` | Username for SSH connection (default: current user) |
 | `--no-build` | Skip building, only copy existing image (requires `--copy-to`) |
 | `-h, --help` | Show help message |

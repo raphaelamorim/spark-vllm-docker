@@ -14,6 +14,7 @@ NO_BUILD=false
 TRITON_REF="v3.5.1"
 VLLM_REF="main"
 TMP_IMAGE=""
+PARALLEL_COPY=false
 
 cleanup() {
     if [ -n "$TMP_IMAGE" ] && [ -f "$TMP_IMAGE" ]; then
@@ -36,6 +37,21 @@ add_copy_hosts() {
     done
 }
 
+copy_to_host() {
+    local host="$1"
+    echo "Loading image into ${SSH_USER}@${host}..."
+    local host_copy_start host_copy_end host_copy_time
+    host_copy_start=$(date +%s)
+    if cat "$TMP_IMAGE" | ssh "${SSH_USER}@${host}" "docker load"; then
+        host_copy_end=$(date +%s)
+        host_copy_time=$((host_copy_end - host_copy_start))
+        printf "Copy to %s completed in %02d:%02d:%02d\n" "$host" $((host_copy_time/3600)) $((host_copy_time%3600/60)) $((host_copy_time%60))
+    else
+        echo "Copy to $host failed."
+        return 1
+    fi
+}
+
 # Help function
 usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -46,6 +62,7 @@ usage() {
     echo "  --vllm-ref <ref>          : vLLM commit SHA, branch or tag (default: 'main')"
     echo "  -c, --copy-to <hosts>     : Host(s) to copy the image to. Accepts comma or space-delimited lists after the flag."
     echo "      --copy-to-host        : Alias for --copy-to (backwards compatibility)."
+    echo "      --copy-parallel       : Copy to all hosts in parallel instead of serially."
     echo "  -u, --user <user>         : Username for ssh command (default: \$USER)"
     echo "  --no-build                : Skip building, only copy image (requires --copy-to)"
     echo "  -h, --help                : Show this help message"
@@ -78,6 +95,7 @@ while [[ "$#" -gt 0 ]]; do
             continue
             ;;
         -u|--user) SSH_USER="$2"; shift ;;
+        --copy-parallel) PARALLEL_COPY=true ;;
         --no-build) NO_BUILD=true ;;
         -h|--help) usage ;;
         *) echo "Unknown parameter passed: $1"; usage ;;
@@ -130,20 +148,36 @@ fi
 COPY_TIME=0
 if [ "${#COPY_HOSTS[@]}" -gt 0 ]; then
     echo "Copying image '$IMAGE_TAG' to ${#COPY_HOSTS[@]} host(s): ${COPY_HOSTS[*]}"
+    if [ "$PARALLEL_COPY" = true ]; then
+        echo "Parallel copy enabled."
+    fi
     COPY_START=$(date +%s)
 
     TMP_IMAGE=$(mktemp -t vllm_image.XXXXXX)
     echo "Saving image locally to $TMP_IMAGE..."
     docker save -o "$TMP_IMAGE" "$IMAGE_TAG"
 
-    for host in "${COPY_HOSTS[@]}"; do
-        echo "Loading image into ${SSH_USER}@${host}..."
-        HOST_COPY_START=$(date +%s)
-        cat "$TMP_IMAGE" | ssh "${SSH_USER}@${host}" "docker load"
-        HOST_COPY_END=$(date +%s)
-        HOST_COPY_TIME=$((HOST_COPY_END - HOST_COPY_START))
-        printf "Copy to %s completed in %02d:%02d:%02d\n" "$host" $((HOST_COPY_TIME/3600)) $((HOST_COPY_TIME%3600/60)) $((HOST_COPY_TIME%60))
-    done
+    if [ "$PARALLEL_COPY" = true ]; then
+        PIDS=()
+        for host in "${COPY_HOSTS[@]}"; do
+            copy_to_host "$host" &
+            PIDS+=($!)
+        done
+        COPY_FAILURE=0
+        for pid in "${PIDS[@]}"; do
+            if ! wait "$pid"; then
+                COPY_FAILURE=1
+            fi
+        done
+        if [ "$COPY_FAILURE" -ne 0 ]; then
+            echo "One or more copies failed."
+            exit 1
+        fi
+    else
+        for host in "${COPY_HOSTS[@]}"; do
+            copy_to_host "$host"
+        done
+    fi
 
     COPY_END=$(date +%s)
     COPY_TIME=$((COPY_END - COPY_START))
