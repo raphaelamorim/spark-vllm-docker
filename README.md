@@ -25,12 +25,18 @@ The Dockerfile builds from the main branch of VLLM, so depending on when you run
 
 ## CHANGELOG
 
+### 2025-12-19
+
+Updated `build-and-copy.sh` to support copying to multiple hosts (thanks @eric-humane for the contribution).
+- Added `-c, --copy-to` (accepts space- or comma-separated host lists) and kept `--copy-to-host` as a backward-compatible alias.
+- Added `--copy-parallel` to copy to all hosts concurrently.
+- **BREAKING CHANGE**: Short `-h` argument is now used for help. Use `-c` for copy.
+
 ### 2025-12-18
 
-Added `launch-cluster.sh` convenience script for basic cluster management - see details below.
-
-Added `-j` / `--build-jobs` argument to `build-and-copy.sh` to control build parallelism.
-Added `--nccl-debug` option to specify NCCL debug level. Default is none to decrease verbosity.
+- Added `launch-cluster.sh` convenience script for basic cluster management - see details below.
+- Added `-j` / `--build-jobs` argument to `build-and-copy.sh` to control build parallelism.
+- Added `--nccl-debug` option to specify NCCL debug level. Default is none to decrease verbosity.
 
 ### 2025-12-15
 
@@ -48,7 +54,7 @@ Triton is now being built from the source, alongside with its companion triton_k
 
 Added new flags to `build-and-copy.sh`:
 - `--triton-sha <sha>`: Specify Triton commit SHA (defaults to v3.5.1 currently)
-- `--no-build`: Skip building and only copy existing image (requires `--copy-to-host`)
+- `--no-build`: Skip building and only copy existing image (requires `--copy-to`)
 
 ### 2025-12-11 update
 
@@ -86,7 +92,7 @@ Using a provided build script is recommended, but if you want to build using `do
 
 ### Using the Build Script (Recommended)
 
-The `build-and-copy.sh` script automates the build process and optionally copies the image to another node. This is the recommended method for building and deploying to multiple Spark nodes.
+The `build-and-copy.sh` script automates the build process and optionally copies the image to one or more nodes. This is the recommended method for building and deploying to multiple Spark nodes.
 
 **Basic usage (build only):**
 
@@ -100,18 +106,30 @@ The `build-and-copy.sh` script automates the build process and optionally copies
 ./build-and-copy.sh --tag my-vllm-node
 ```
 
-**Build and copy to another Spark node:**
+**Build and copy to Spark node(s):**
 
-Using the same username as currently logged-in user:
+Using the same username as currently logged-in user (single host):
 
 ```bash
-./build-and-copy.sh --copy-to-host 192.168.177.12
+./build-and-copy.sh --copy-to 192.168.177.12
+```
+
+Copy to multiple hosts (space- or comma-separated after the flag):
+
+```bash
+./build-and-copy.sh --copy-to 192.168.177.12 192.168.177.13
+```
+
+Copy to multiple hosts in parallel:
+
+```bash
+./build-and-copy.sh --copy-to 192.168.177.12 192.168.177.13 --copy-parallel
 ```
 
 Using a different username:
 
 ```bash
-./build-and-copy.sh --copy-to-host 192.168.177.12 --user your_username
+./build-and-copy.sh --copy-to 192.168.177.12 --user your_username
 ```
 
 **Force rebuild vLLM source only:**
@@ -129,7 +147,7 @@ Using a different username:
 **Combined example (rebuild vLLM and copy to another node):**
 
 ```bash
-./build-and-copy.sh --rebuild-vllm --copy-to-host 192.168.177.12
+./build-and-copy.sh --rebuild-vllm --copy-to 192.168.177.12
 ```
 
 **Build with specific Triton commit:**
@@ -141,7 +159,7 @@ Using a different username:
 **Copy existing image without rebuilding:**
 
 ```bash
-./build-and-copy.sh --no-build --copy-to-host 192.168.177.12
+./build-and-copy.sh --no-build --copy-to 192.168.177.12
 ```
 
 **Available options:**
@@ -153,11 +171,13 @@ Using a different username:
 | `--rebuild-vllm` | Force rebuild vLLM source only (sets CACHEBUST_VLLM) |
 | `--triton-ref <ref>` | Triton commit SHA, branch or tag (default: 'v3.5.1') |
 | `--vllm-ref <ref>` | vLLM commit SHA, branch or tag (default: 'main') |
+| `-c, --copy-to <host[,host...] or host host...>` | Host(s) to copy the image to after building (space- or comma-separated list after the flag). |
+| `--copy-to-host` | Alias for `--copy-to` (backwards compatibility). |
+| `--copy-parallel` | Copy to all specified hosts concurrently. |
 | `-j, --build-jobs <jobs>` | Number of parallel build jobs (default: Dockerfile default) |
-| `-h, --copy-to-host <host>` | Host address to copy the image to after building |
 | `-u, --user <user>` | Username for SSH connection (default: current user) |
-| `--no-build` | Skip building, only copy existing image (requires `--copy-to-host`) |
-| `--help` | Show help message |
+| `--no-build` | Skip building, only copy existing image (requires `--copy-to`) |
+| `-h, --help` | Show help message |
 
 **IMPORTANT**: When copying to another node, make sure you use the Spark IP assigned to its ConnectX 7 interface (enp1s0f1np1), and not the 10G interface (enP7s7)!
 
@@ -430,4 +450,3 @@ Modify `--num-prompts` to benchmark concurrent requests - the command above will
 ### Hardware Architecture
 
 **Note:** The Dockerfile defaults to `TORCH_CUDA_ARCH_LIST=12.1a` (NVIDIA GB10). If you are using different hardware, update the `ENV` variable in the Dockerfile before building.
-

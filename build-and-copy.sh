@@ -8,11 +8,50 @@ START_TIME=$(date +%s)
 IMAGE_TAG="vllm-node"
 REBUILD_DEPS=false
 REBUILD_VLLM=false
-COPY_HOST=""
+COPY_HOSTS=()
 SSH_USER="$USER"
 NO_BUILD=false
 TRITON_REF="v3.5.1"
 VLLM_REF="main"
+TMP_IMAGE=""
+PARALLEL_COPY=false
+
+cleanup() {
+    if [ -n "$TMP_IMAGE" ] && [ -f "$TMP_IMAGE" ]; then
+        echo "Cleaning up temporary image $TMP_IMAGE"
+        rm -f "$TMP_IMAGE"
+    fi
+}
+
+trap cleanup EXIT
+
+add_copy_hosts() {
+    local token part
+    for token in "$@"; do
+        IFS=',' read -ra PARTS <<< "$token"
+        for part in "${PARTS[@]}"; do
+            part="${part//[[:space:]]/}"
+            if [ -n "$part" ]; then
+                COPY_HOSTS+=("$part")
+            fi
+        done
+    done
+}
+
+copy_to_host() {
+    local host="$1"
+    echo "Loading image into ${SSH_USER}@${host}..."
+    local host_copy_start host_copy_end host_copy_time
+    host_copy_start=$(date +%s)
+    if cat "$TMP_IMAGE" | ssh "${SSH_USER}@${host}" "docker load"; then
+        host_copy_end=$(date +%s)
+        host_copy_time=$((host_copy_end - host_copy_start))
+        printf "Copy to %s completed in %02d:%02d:%02d\n" "$host" $((host_copy_time/3600)) $((host_copy_time%3600/60)) $((host_copy_time%60))
+    else
+        echo "Copy to $host failed."
+        return 1
+    fi
+}
 BUILD_JOBS="16"
 
 # Help function
@@ -23,11 +62,13 @@ usage() {
     echo "  --rebuild-vllm            : Set cache bust for vllm"
     echo "  --triton-ref <ref>        : Triton commit SHA, branch or tag (default: 'v3.5.1')"
     echo "  --vllm-ref <ref>          : vLLM commit SHA, branch or tag (default: 'main')"
+    echo "  -c, --copy-to <hosts>     : Host(s) to copy the image to. Accepts comma or space-delimited lists after the flag."
+    echo "      --copy-to-host        : Alias for --copy-to (backwards compatibility)."
+    echo "      --copy-parallel       : Copy to all hosts in parallel instead of serially."
     echo "  -j, --build-jobs <jobs>   : Number of concurrent build jobs (default: \${BUILD_JOBS})"
-    echo "  -h, --copy-to-host <host> : Host address to copy the image to (if not set, don't copy)"
     echo "  -u, --user <user>         : Username for ssh command (default: \$USER)"
-    echo "  --no-build                : Skip building, only copy image (requires --copy-to-host)"
-    echo "  --help                    : Show this help message"
+    echo "  --no-build                : Skip building, only copy image (requires --copy-to)"
+    echo "  -h, --help                : Show this help message"
     exit 1
 }
 
@@ -39,19 +80,36 @@ while [[ "$#" -gt 0 ]]; do
         --rebuild-vllm) REBUILD_VLLM=true ;;
         --triton-ref) TRITON_REF="$2"; shift ;;
         --vllm-ref) VLLM_REF="$2"; shift ;;
+        -c|--copy-to|--copy-to-host|--copy-to-hosts)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "Error: --copy-to requires at least one host"
+                exit 1
+            fi
+            EXISTING_HOSTS=${#COPY_HOSTS[@]}
+            while [[ "$#" -gt 0 && "$1" != -* ]]; do
+                add_copy_hosts "$1"
+                shift
+            done
+            if [ "${#COPY_HOSTS[@]}" -eq "$EXISTING_HOSTS" ]; then
+                echo "Error: --copy-to requires at least one host"
+                exit 1
+            fi
+            continue
+            ;;
         -j|--build-jobs) BUILD_JOBS="$2"; shift ;;
-        -h|--copy-to-host) COPY_HOST="$2"; shift ;;
         -u|--user) SSH_USER="$2"; shift ;;
+        --copy-parallel) PARALLEL_COPY=true ;;
         --no-build) NO_BUILD=true ;;
-        --help) usage ;;
+        -h|--help) usage ;;
         *) echo "Unknown parameter passed: $1"; usage ;;
     esac
     shift
 done
 
 # Validate --no-build usage
-if [ "$NO_BUILD" = true ] && [ -z "$COPY_HOST" ]; then
-    echo "Error: --no-build requires --copy-to-host to be specified"
+if [ "$NO_BUILD" = true ] && [ "${#COPY_HOSTS[@]}" -eq 0 ]; then
+    echo "Error: --no-build requires --copy-to to be specified"
     exit 1
 fi
 
@@ -95,11 +153,39 @@ fi
 
 # Copy to host if requested
 COPY_TIME=0
-if [ -n "$COPY_HOST" ]; then
-    echo "Copying image '$IMAGE_TAG' to ${SSH_USER}@${COPY_HOST}..."
+if [ "${#COPY_HOSTS[@]}" -gt 0 ]; then
+    echo "Copying image '$IMAGE_TAG' to ${#COPY_HOSTS[@]} host(s): ${COPY_HOSTS[*]}"
+    if [ "$PARALLEL_COPY" = true ]; then
+        echo "Parallel copy enabled."
+    fi
     COPY_START=$(date +%s)
-    # Using the pipe method from README.md
-    docker save "$IMAGE_TAG" | ssh "${SSH_USER}@${COPY_HOST}" "docker load"
+
+    TMP_IMAGE=$(mktemp -t vllm_image.XXXXXX)
+    echo "Saving image locally to $TMP_IMAGE..."
+    docker save -o "$TMP_IMAGE" "$IMAGE_TAG"
+
+    if [ "$PARALLEL_COPY" = true ]; then
+        PIDS=()
+        for host in "${COPY_HOSTS[@]}"; do
+            copy_to_host "$host" &
+            PIDS+=($!)
+        done
+        COPY_FAILURE=0
+        for pid in "${PIDS[@]}"; do
+            if ! wait "$pid"; then
+                COPY_FAILURE=1
+            fi
+        done
+        if [ "$COPY_FAILURE" -ne 0 ]; then
+            echo "One or more copies failed."
+            exit 1
+        fi
+    else
+        for host in "${COPY_HOSTS[@]}"; do
+            copy_to_host "$host"
+        done
+    fi
+
     COPY_END=$(date +%s)
     COPY_TIME=$((COPY_END - COPY_START))
     echo "Copy complete."
