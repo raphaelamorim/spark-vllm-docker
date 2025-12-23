@@ -342,7 +342,11 @@ apply_mod_to_container() {
         # Unzip in container using python
         echo "  Extracting zip..."
         local py_unzip="import zipfile, sys; zipfile.ZipFile(sys.argv[1], 'r').extractall(sys.argv[2])"
-        $cmd_prefix docker exec "$container" python3 -c "$py_unzip" "$container_dest/$zip_name" "$container_dest"
+        if [[ "$is_local" == "true" ]]; then
+            docker exec "$container" python3 -c "$py_unzip" "$container_dest/$zip_name" "$container_dest"
+        else
+            $cmd_prefix docker exec "$container" python3 -c "\"$py_unzip\"" "$container_dest/$zip_name" "$container_dest"
+        fi
     else
         # Directory
         echo "  Copying directory content to container..."
@@ -357,8 +361,19 @@ apply_mod_to_container() {
 
     # 3. Run run.sh
     echo "  Running patch script on $node_ip..."
-    echo "CMD: cd $container_dest && chmod +x run.sh && ./run.sh"
-    if ! $cmd_prefix docker exec "$container" bash -c "cd $container_dest && chmod +x run.sh && ./run.sh"; then
+
+    local exec_cmd="cd $container_dest && chmod +x run.sh && ./run.sh"
+    local ret_code=0
+
+    if [[ "$is_local" == "true" ]]; then
+        docker exec "$container" bash -c "$exec_cmd"
+        ret_code=$?
+    else
+        $cmd_prefix docker exec "$container" bash -c "\"$exec_cmd\""
+        ret_code=$?
+    fi
+
+    if [[ $ret_code -ne 0 ]]; then
         echo "Error: Patch script failed on $node_ip"
         # We should probably stop the cluster here or at least fail hard
         exit 1
