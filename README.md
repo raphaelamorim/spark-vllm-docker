@@ -144,11 +144,11 @@ Don't do it every time you rebuild, because it will slow down compilation times.
 
 For periodic maintenance, I recommend using a filter: `docker builder prune --filter until=72h`
 
-### 2026-01-26
+### 2026-01-29
 
 Added an experimental build option, optimized for DGX Spark and gpt-oss models by [Christopher Owen](https://github.com/christopherowen/spark-vllm-mxfp4-docker/blob/main/Dockerfile).
 
-It is currently the fastest way to run GPT-OSS on DGX Spark, achieving 60 t/s on a single Spark. It's currently not working in a cluster configuration.
+It is currently the fastest way to run GPT-OSS on DGX Spark, achieving 60 t/s on a single Spark and 75 t/s on dual Sparks. 
 
 To use this build, first build the container with `--exp-mxfp4` flag. I recommend using a separate label as it is currently not recommended to use this build for models other than gpt-oss:
 
@@ -183,7 +183,7 @@ Then, to run on a single Spark:
         --max-num-batched-tokens 8192"
 ```
 
-On a Dual Spark cluster (**CURRENTLY NOT WORKING**):
+On a Dual Spark cluster:
 
 ```bash
 ./launch-cluster.sh -t vllm-node-mxfp4 exec vllm serve \
