@@ -70,7 +70,7 @@ ARG CACHEBUST_DEPS=1
 # pip reuses previously downloaded wheels.
 
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+    uv pip install torch==2.9.1 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
 # Install additional dependencies
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
