@@ -223,7 +223,8 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
 # Copy artifacts from Builder Stage
 COPY --from=builder /workspace/wheels /workspace/wheels
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv pip install /workspace/wheels/*.whl
+    uv pip install /workspace/wheels/*.whl && \
+    rm -rf /workspace/wheels
 
 # Setup Env for Runtime
 ENV TORCH_CUDA_ARCH_LIST=12.1a
@@ -239,3 +240,18 @@ RUN chmod +x $VLLM_BASE_DIR/run-cluster-node.sh
 # Final extra deps
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv pip install ray[default] fastsafetensors "apache-tvm-ffi<0.2"
+
+# Cleanup
+# RUN uv pip uninstall absl-py apex argon2-cffi \
+#     argon2-cffi-bindings arrow asttokens astunparse async-lru audioread babel beautifulsoup4 \
+#     black bleach comm contourpy cycler datasets debugpy decorator defusedxml dllist dm-tree \
+#     execnet executing expecttest fastjsonschema fonttools fqdn gast hypothesis \
+#     ipykernel ipython ipython_pygments_lexers isoduration isort jedi joblib jupyter-events \
+#     jupyter-lsp jupyter_client jupyter_core jupyter_server jupyter_server_terminals jupyterlab \
+#     jupyterlab_code_formatter jupyterlab_code_formatter jupyterlab_pygments jupyterlab_server \
+#     jupyterlab_tensorboard_pro jupytext kiwisolver matplotlib matplotlib-inline matplotlib-inline \
+#     mistune ml_dtypes mock nbclient nbconvert nbformat nest-asyncio notebook notebook_shim \
+#     opt_einsum optree outlines_core overrides pandas pandocfilters parso pexpect polygraphy pooch \
+#     pyarrow pycocotools pytest-flakefinder pytest-rerunfailures pytest-shard pytest-xdist \
+#     scikit-learn scipy Send2Trash soundfile soupsieve soxr spin stack-data \
+#     wcwidth webcolors xdoctest Werkzeug
