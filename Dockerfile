@@ -264,10 +264,9 @@ RUN mkdir -p tiktoken_encodings && \
     wget -O tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 
 # Copy artifacts from Builder Stage
-COPY --from=builder /workspace/wheels /workspace/wheels
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv pip install /workspace/wheels/*.whl && \
-    rm -rf /workspace/wheels
+RUN --mount=type=bind,from=builder,source=/workspace/wheels,target=/mount/wheels \
+    --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
+    uv pip install /mount/wheels/*.whl
 
 ARG PRE_TRANSFORMERS=0
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
