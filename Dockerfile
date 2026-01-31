@@ -64,29 +64,31 @@ ENV TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
 FROM base AS builder
 
 
-# Triton Build
+# ======= Triton Build ========== 
 
-# Initial Triton repo clone (cached forever)
-RUN git clone https://github.com/triton-lang/triton.git
+# # Initial Triton repo clone (cached forever)
+# RUN git clone https://github.com/triton-lang/triton.git
 
-# We expect TRITON_REF to be passed from the command line to break the cache
-# Set to v3.5.1 tag by default
-ARG TRITON_REF=v3.5.1
+# # We expect TRITON_REF to be passed from the command line to break the cache
+# # Set to v3.5.1 tag by default
+# ARG TRITON_REF=v3.5.1
 
-WORKDIR $VLLM_BASE_DIR/triton
+# WORKDIR $VLLM_BASE_DIR/triton
 
-# This only runs if TRITON_REF differs from the last build
-RUN --mount=type=cache,id=ccache,target=/root/.ccache \
-    --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    git fetch origin && \
-    git checkout ${TRITON_REF} && \
-    git submodule sync && \
-    git submodule update --init --recursive && \
-    uv pip install -r python/requirements.txt && \
-    mkdir -p /workspace/wheels && \
-    rm -rf .git && \
-    uv build --no-build-isolation --wheel --out-dir=/workspace/wheels -v .  && \
-    uv build --no-build-isolation --wheel --no-index --out-dir=/workspace/wheels python/triton_kernels 
+# # This only runs if TRITON_REF differs from the last build
+# RUN --mount=type=cache,id=ccache,target=/root/.ccache \
+#     --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
+#     git fetch origin && \
+#     git checkout ${TRITON_REF} && \
+#     git submodule sync && \
+#     git submodule update --init --recursive && \
+#     uv pip install -r python/requirements.txt && \
+#     mkdir -p /workspace/wheels && \
+#     rm -rf .git && \
+#     uv build --no-build-isolation --wheel --out-dir=/workspace/wheels -v .  && \
+#     uv build --no-build-isolation --wheel --no-index --out-dir=/workspace/wheels python/triton_kernels 
+
+# ======= FlashInfer Build ==========
 
 ENV FLASHINFER_CUDA_ARCH_LIST="12.1f"
 WORKDIR $VLLM_BASE_DIR
@@ -279,8 +281,9 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
 
 # Cleanup
 
-# Remove triton-kernels as they are not compatible with this vLLM version yet
-# RUN uv pip uninstall triton-kernels
+# If not compiling Triton
+# remove triton-kernels as they are not compatible with this vLLM version yet
+RUN uv pip uninstall triton-kernels
 
 # Keeping it here for reference - this won't work as is without squashing layers
 # RUN uv pip uninstall absl-py apex argon2-cffi \
