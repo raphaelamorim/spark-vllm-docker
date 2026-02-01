@@ -6,7 +6,7 @@ ARG BUILD_JOBS=16
 # =========================================================
 # STAGE 1: Base Image (Installs Dependencies)
 # =========================================================
-FROM nvcr.io/nvidia/pytorch:25.12-py3 AS base
+FROM nvcr.io/nvidia/pytorch:26.01-py3 AS base
 
 # Build parallemism
 ARG BUILD_JOBS
@@ -225,7 +225,7 @@ RUN --mount=type=cache,id=ccache,target=/root/.ccache \
 # =========================================================
 # STAGE 4: Runner (Transfers only necessary artifacts)
 # =========================================================
-FROM nvcr.io/nvidia/pytorch:25.12-py3 AS runner
+FROM nvcr.io/nvidia/pytorch:26.01-py3 AS runner
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
@@ -275,3 +275,6 @@ RUN chmod +x $VLLM_BASE_DIR/run-cluster-node.sh
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv pip install ray[default] fastsafetensors
 
+# If not compiling Triton
+# remove triton-kernels as they are not compatible with this vLLM version yet
+RUN uv pip uninstall triton-kernels
