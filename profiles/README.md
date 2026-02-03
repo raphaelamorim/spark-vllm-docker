@@ -51,13 +51,29 @@ vllm serve org/model-name \
 
 ### Metadata Comments
 
-The `# PROFILE:` and `# DESCRIPTION:` comments are optional but recommended for documentation:
+The following comment directives are supported in launch scripts:
 
 ```bash
 #!/bin/bash
 # PROFILE: MiniMax-M2-AWQ Example
 # DESCRIPTION: vLLM serving MiniMax-M2-AWQ with Ray distributed backend
+# DEFAULT_CONTAINER: vllm-node
 ```
+
+| Directive | Description |
+|-----------|--------------|
+| `PROFILE:` | Human-readable name for the profile |
+| `DESCRIPTION:` | Brief description of what the script does |
+| `DEFAULT_CONTAINER:` | Default Docker image to use (can be overridden with `-t`) |
+
+The `DEFAULT_CONTAINER:` directive is particularly useful when a profile requires a specific image build (e.g., `vllm-node-mxfp4` for MXFP4 support). If the image doesn't exist locally, you can use `--auto-build` with `--launch-script` to build it automatically:
+
+```bash
+# Auto-build the image if missing (--auto-build requires --launch-script)
+./launch-cluster.sh --launch-script my-profile.sh --auto-build
+```
+
+Note: `--auto-build` can only be used with `--launch-script` because it reads the `DEFAULT_CONTAINER:` directive from the profile to determine which image to build.
 
 ## Examples
 
@@ -167,8 +183,9 @@ Usage:
 1. Create a new `.sh` file in this directory
 2. Add the shebang `#!/bin/bash`
 3. Add `# PROFILE:` and `# DESCRIPTION:` comments
-4. Write your command (e.g., `vllm serve ...`)
-5. Run with `./launch-cluster.sh --launch-script my-script.sh exec`
+4. (Optional) Add `# DEFAULT_CONTAINER:` to specify the required Docker image
+5. Write your command (e.g., `vllm serve ...`)
+6. Run with `./launch-cluster.sh --launch-script my-script.sh`
 
 ## Testing Scripts
 

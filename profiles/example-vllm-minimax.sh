@@ -1,6 +1,7 @@
 #!/bin/bash
 # PROFILE: MiniMax-M2-AWQ Example
 # DESCRIPTION: vLLM serving MiniMax-M2-AWQ with Ray distributed backend
+# DEFAULT_CONTAINER: vllm-node
 
 vllm serve QuantTrio/MiniMax-M2-AWQ \
     --port 8000 \

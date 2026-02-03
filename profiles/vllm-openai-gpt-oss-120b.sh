@@ -1,6 +1,7 @@
 #!/bin/bash
 # PROFILE: OpenAI GPT-OSS 120B
 # DESCRIPTION: vLLM serving openai/gpt-oss-120b with FlashInfer MOE optimization
+# DEFAULT_CONTAINER: vllm-node-mxfp4
 
 # Enable FlashInfer MOE with MXFP4/MXFP8 quantization
 export VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8=1

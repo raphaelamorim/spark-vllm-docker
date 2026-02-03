@@ -3,6 +3,8 @@
 # Default Configuration
 IMAGE_NAME="vllm-node"
 DEFAULT_CONTAINER_NAME="vllm_node"
+IMAGE_EXPLICITLY_SET="false"
+AUTO_BUILD="false"
 # Modify these if you want to pass additional docker args or set VLLM_SPARK_EXTRA_DOCKER_ARGS variable
 DOCKER_ARGS="-e NCCL_IGNORE_CPU_AFFINITY=1 -v $HOME/.cache/huggingface:/root/.cache/huggingface"
 
@@ -46,6 +48,7 @@ usage() {
     echo "  --launch-script Path to bash script to execute in the container (from profiles/ directory or absolute path)"
     echo "  --check-config  Check configuration and auto-detection without launching"
     echo "  --solo          Solo mode: skip autodetection, launch only on current node, do not launch Ray cluster"
+    echo "  --auto-build    Automatically build the container image if it doesn't exist (requires --launch-script)"
     echo "  -d              Daemon mode (only for 'start' action)"
     echo "  action          start | stop | status | exec (Default: start)"
     echo "  command         Command to run (only for 'exec' action)"
@@ -53,6 +56,9 @@ usage() {
     echo "Launch Script Usage:"
     echo "  $0 --launch-script profiles/my-script.sh   # Script copied to container and executed"
     echo "  $0 --launch-script /path/to/script.sh      # Uses absolute path to script"
+    echo ""
+    echo "Profile scripts can specify a default container with '# DEFAULT_CONTAINER: image-name' directive."
+    echo "Use --auto-build to automatically build the image if it doesn't exist."
     exit 1
 }
 
@@ -60,7 +66,7 @@ usage() {
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -n|--nodes) NODES_ARG="$2"; shift ;;
-        -t) IMAGE_NAME="$2"; shift ;;
+        -t) IMAGE_NAME="$2"; IMAGE_EXPLICITLY_SET="true"; shift ;;
         --name) CONTAINER_NAME="$2"; shift ;;
         --eth-if) ETH_IF="$2"; shift ;;
         --ib-if) IB_IF="$2"; shift ;;
@@ -77,6 +83,7 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         --check-config) CHECK_CONFIG="true" ;;
         --solo) SOLO_MODE="true" ;;
+        --auto-build) AUTO_BUILD="true" ;;
         -d) DAEMON_MODE="true" ;;
         -h|--help) usage ;;
         start|stop|status) 
@@ -137,6 +144,15 @@ if [[ -n "$LAUNCH_SCRIPT_PATH" ]]; then
     
     echo "Using launch script: $LAUNCH_SCRIPT_PATH"
     
+    # Parse DEFAULT_CONTAINER directive from profile if image not explicitly set
+    if [[ "$IMAGE_EXPLICITLY_SET" == "false" ]]; then
+        PROFILE_CONTAINER=$(grep -E '^#\s*DEFAULT_CONTAINER:' "$LAUNCH_SCRIPT_PATH" | head -1 | sed 's/^#\s*DEFAULT_CONTAINER:\s*//' | xargs)
+        if [[ -n "$PROFILE_CONTAINER" ]]; then
+            IMAGE_NAME="$PROFILE_CONTAINER"
+            echo "Using container from profile: $IMAGE_NAME"
+        fi
+    fi
+    
     # Set command to run the copied script (use absolute path since docker exec may not be in /workspace)
     COMMAND_TO_RUN="/workspace/exec-script.sh"
     
@@ -144,6 +160,13 @@ if [[ -n "$LAUNCH_SCRIPT_PATH" ]]; then
     if [[ "$ACTION" == "start" ]]; then
         ACTION="exec"
     fi
+fi
+
+# Validate --auto-build requires --launch-script
+if [[ "$AUTO_BUILD" == "true" && -z "$LAUNCH_SCRIPT_PATH" ]]; then
+    echo "Error: --auto-build can only be used with --launch-script."
+    echo "The --auto-build flag uses the DEFAULT_CONTAINER directive from the profile to determine which image to build."
+    exit 1
 fi
 
 # Validate MOD_PATHS if set
@@ -265,6 +288,80 @@ if [[ "$CHECK_CONFIG" == "true" ]]; then
     echo "  ETH Interface: $ETH_IF"
     echo "  IB Interface: $IB_IF"
     exit 0
+fi
+
+# Check if container image exists (for start/exec actions)
+check_and_build_image() {
+    local image="$1"
+    
+    # Check if image exists locally
+    if docker image inspect "$image" >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    echo "Warning: Docker image '$image' not found locally."
+    
+    if [[ "$AUTO_BUILD" == "true" ]]; then
+        echo "Auto-build enabled. Building image..."
+        build_image "$image"
+    else
+        echo ""
+        echo "Options:"
+        echo "  1. Build the image with: $SCRIPT_DIR/build-and-copy.sh -t $image"
+        echo "  2. Use --auto-build flag to build automatically"
+        echo "  3. Pull from a registry if available"
+        echo ""
+        read -p "Would you like to build the image now? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            build_image "$image"
+        else
+            echo "Aborting. Please build or pull the image first."
+            exit 1
+        fi
+    fi
+}
+
+build_image() {
+    local image="$1"
+    local build_script="$SCRIPT_DIR/build-and-copy.sh"
+    
+    if [[ ! -x "$build_script" ]]; then
+        echo "Error: Build script not found or not executable: $build_script"
+        exit 1
+    fi
+    
+    echo "Building image '$image'..."
+    
+    # Collect worker hosts for --copy-to if we have peer nodes
+    local copy_args=""
+    if [[ ${#PEER_NODES[@]} -gt 0 ]]; then
+        copy_args="--copy-to $(IFS=,; echo "${PEER_NODES[*]}")"
+        echo "Will also copy to worker nodes: ${PEER_NODES[*]}"
+    fi
+    
+    # Run the build script
+    if ! "$build_script" -t "$image" $copy_args; then
+        echo "Error: Failed to build image '$image'"
+        exit 1
+    fi
+    
+    echo "Image '$image' built successfully."
+}
+
+if [[ "$ACTION" == "start" || "$ACTION" == "exec" ]]; then
+    # Check local image
+    check_and_build_image "$IMAGE_NAME"
+    
+    # Check image on worker nodes (if not auto-building which already copies)
+    if [[ "$AUTO_BUILD" != "true" && ${#PEER_NODES[@]} -gt 0 ]]; then
+        for worker in "${PEER_NODES[@]}"; do
+            if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=no "$worker" "docker image inspect '$IMAGE_NAME'" >/dev/null 2>&1; then
+                echo "Warning: Image '$IMAGE_NAME' not found on worker node $worker."
+                echo "Consider running: $SCRIPT_DIR/build-and-copy.sh -t $IMAGE_NAME --copy-to $worker"
+            fi
+        done
+    fi
 fi
 
 # Cleanup Function

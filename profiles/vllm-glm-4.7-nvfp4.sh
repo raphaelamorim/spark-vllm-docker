@@ -1,6 +1,7 @@
 #!/bin/bash
 # PROFILE: Salyut1/GLM-4.7-NVFP4
 # DESCRIPTION: vLLM serving GLM-4.7-NVFP4
+# DEFAULT_CONTAINER: vllm-node-tf5
 # NOTE: This profile requires --apply-mod mods/fix-Salyut1-GLM-4.7-NVFP4 to fix k/v scales incompatibility
 # See: https://huggingface.co/Salyut1/GLM-4.7-NVFP4/discussions/3#694ab9b6e2efa04b7ecb0c4b
 
