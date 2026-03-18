@@ -558,7 +558,11 @@ make_node_script() {
     [[ "$node_rank" -gt 0 ]] && extra="$extra --headless"
 
     local tmp; tmp=$(mktemp /tmp/vllm_node_script_XXXXXX.sh)
-    grep -v -- '--distributed-executor-backend' "$script_path" > "$tmp"
+    # Remove just the flag and its value (not the whole line), then filter empty/backslash-only lines
+    sed 's/--distributed-executor-backend[[:space:]]*[^[:space:]]*//' "$script_path" | \
+        grep -Ev '^[[:space:]\\]*$' > "$tmp"
+    # Strip trailing backslash from last line before appending multi-node args
+    sed -i "$ s/[[:space:]]*\\\\[[:space:]]*$//" "$tmp"
     sed -i "$ s/$/ $extra/" "$tmp"
     chmod +x "$tmp"
     echo "$tmp"
